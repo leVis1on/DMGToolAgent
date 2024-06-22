@@ -48,6 +48,9 @@ class DatabaseApp:
         self.root = root
         self.root.title("DMG Tool Agent")
 
+        # Set window icon
+        self.root.iconphoto(False, PhotoImage(file='icon.png'))
+
         self.conn = connect_to_db('tools.db')
         create_table(self.conn)
         
@@ -126,7 +129,10 @@ class DatabaseApp:
         self.entry_value.insert(0, ','.join(map(str, values[1:])))
         
         top = Toplevel(self.root)
-        top.title("Edit Record")
+        top.title("Редактировать запись")
+
+        # Set window icon
+        top.iconphoto(False, PhotoImage(file='icon.png'))
         
         # Centering the window
         self.root.update_idletasks()
