@@ -18,7 +18,7 @@ from tkinter import *
 from tkinter import ttk
 from tkinter import messagebox
 
-# Database functions
+# Функции базы данных
 def connect_to_db(db_name):
     return sqlite3.connect(db_name)
 
@@ -27,7 +27,7 @@ def create_table(connection):
         connection.execute('''
             CREATE TABLE IF NOT EXISTS tools (
                 id INTEGER PRIMARY KEY,
-                T TEXT, Name TEXT, L REAL, R REAL, Type TEXT, Description TEXT, 
+                T INTEGER, Name TEXT, L REAL, R REAL, Type TEXT, Description TEXT, 
                 LCut REAL, Cuts INTEGER, ROffset REAL, LOffset REAL, PType TEXT
             );
         ''')
@@ -57,13 +57,13 @@ def get_all_values(connection):
     cursor.execute('SELECT * FROM tools;')
     return cursor.fetchall()
 
-# GUI class
+# Класс пользовательского интерфейса
 class DatabaseApp:
     def __init__(self, root):
         self.root = root
         self.root.title("DMG Tool Agent")
 
-        # Set window icon
+        # Установка иконки основного окна
         self.root.iconphoto(False, PhotoImage(file='icon.png'))
 
         self.conn = connect_to_db('tools.db')
@@ -73,11 +73,12 @@ class DatabaseApp:
         self.load_data()
 
     def setup_ui(self):
-        # Create frame for treeview and scrollbars
+        
+        # Создание фреймов для таблицы и скроллбаров
         frame = Frame(self.root)
         frame.pack(side=TOP, fill=BOTH, expand=True)
 
-        # Create treeview
+        # Создание таблицы
         columns = ('ID', 'T', 'Name', 'L', 'R', 'Type', 'Description', 
                    'LCut', 'Cuts', 'ROffset', 'LOffset', 'PType')
         self.tree = ttk.Treeview(frame, columns=columns, show='headings')
@@ -85,14 +86,14 @@ class DatabaseApp:
             self.tree.heading(col, text=col, command=lambda _col=col: self.sort_by_column(_col, False))
         self.tree.pack(side=LEFT, fill=BOTH, expand=True)
 
-        # Add scrollbars
+        # Добавление скроллбаров
         hsb = ttk.Scrollbar(frame, orient="horizontal", command=self.tree.xview)
         hsb.place(relwidth=1, anchor="sw", x=0, rely=1)
         vsb = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
         vsb.place(relheight=1, anchor="ne", y=0, relx=1)
         self.tree.configure(xscrollcommand=hsb.set, yscrollcommand=vsb.set)
         
-        # Buttons
+        # Кнопки
         controls = Frame(self.root)
         controls.pack(side=BOTTOM, fill=X)
 
@@ -146,10 +147,10 @@ class DatabaseApp:
         top = Toplevel(self.root)
         top.title("Редактировать запись")
 
-        # Set window icon
+        # Установка иконки окна редактирования
         top.iconphoto(False, PhotoImage(file='icon.png'))
         
-        # Centering the window
+        # Центрирование окна
         self.root.update_idletasks()
         parent_x = self.root.winfo_x()
         parent_y = self.root.winfo_y()
@@ -178,7 +179,8 @@ class DatabaseApp:
                 new_values = new_values + [''] * (11 - len(new_values))
                 update_value(self.conn, new_values + [values[0]])
                 self.load_data()
-                # Find and select the updated record by ID
+
+                # Найти обновленную запись по ID
                 for child in self.tree.get_children():
                     if self.tree.item(child)['values'][0] == values[0]:
                         self.tree.selection_set(child)
@@ -202,7 +204,7 @@ class DatabaseApp:
     def sort_by_column(self, col, descending):
         data = [(self.tree.set(child, col), child) for child in self.tree.get_children('')]
         
-        # Convert data to appropriate type (number or string) for sorting
+        # Преобразовать данные для сортировки
         try:
             data = [(float(val), child) if val.replace('.', '', 1).isdigit() else (val, child) for val, child in data]
         except ValueError:
@@ -227,7 +229,7 @@ class DatabaseApp:
 def main():
     root = Tk()
     
-    # Centering and resizing the window
+    # Центрирование и размеры основного окна
     root.update_idletasks()
     width = root.winfo_screenwidth() // 2
     height = root.winfo_screenheight() // 2
