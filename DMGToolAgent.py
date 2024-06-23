@@ -28,7 +28,7 @@ def create_table(connection):
             CREATE TABLE IF NOT EXISTS tools (
                 id INTEGER PRIMARY KEY,
                 T INTEGER, Name TEXT, L REAL, R REAL, Type TEXT, Description TEXT, 
-                LCut REAL, Cuts INTEGER, ROffset REAL, LOffset REAL, PType TEXT
+                LCut REAL, Cuts INTEGER, ROffset REAL, LOffset REAL, PType INTEGER
             );
         ''')
 
