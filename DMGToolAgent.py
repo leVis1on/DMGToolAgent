@@ -1,244 +1,278 @@
-# DMG Tool Agent
-# 
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
-# 
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-# GNU General Public License for more details.
-# 
-# You should have received a copy of the GNU General Public License
-# along with this program. If not, see <https://www.gnu.org/licenses/>.
-
+import sys
+import os
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QTableView, QVBoxLayout, QWidget, 
+    QPushButton, QLineEdit, QLabel, QComboBox, QFormLayout, 
+    QHeaderView, QFileDialog, QMessageBox, QDialog, QHBoxLayout,
+    QAbstractItemView, QDialogButtonBox
+)
+from PyQt5.QtCore import Qt, QSortFilterProxyModel, QVariant
+from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon
 import sqlite3
-from tkinter import *
-from tkinter import ttk
-from tkinter import messagebox
 
-# Функции базы данных
-def connect_to_db(db_name):
-    return sqlite3.connect(db_name)
-
-def create_table(connection):
-    with connection:
-        connection.execute('''
-            CREATE TABLE IF NOT EXISTS tools (
-                id INTEGER PRIMARY KEY,
-                T INTEGER, Name TEXT, L REAL, R REAL, Type TEXT, Description TEXT, 
-                LCut REAL, Cuts INTEGER, ROffset REAL, LOffset REAL, PType INTEGER
-            );
-        ''')
-
-def insert_value(connection, values):
-    with connection:
-        connection.execute('''
-            INSERT INTO tools (T, Name, L, R, Type, Description, LCut, Cuts, ROffset, LOffset, PType) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-        ''', values)
-
-def delete_value(connection, record_id):
-    with connection:
-        connection.execute('''
-            DELETE FROM tools WHERE id = ?;
-        ''', (record_id,))
-
-def update_value(connection, values):
-    with connection:
-        connection.execute('''
-            UPDATE tools SET T=?, Name=?, L=?, R=?, Type=?, Description=?, 
-            LCut=?, Cuts=?, ROffset=?, LOffset=?, PType=? WHERE id=?;
-        ''', values)
-
-def get_all_values(connection):
-    cursor = connection.cursor()
-    cursor.execute('SELECT * FROM tools;')
-    return cursor.fetchall()
-
-# Класс пользовательского интерфейса
-class DatabaseApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("DMG Tool Agent")
-
-        # Установка иконки основного окна
-        self.root.iconphoto(False, PhotoImage(file='icon.png'))
-
-        self.conn = connect_to_db('tools.db')
-        create_table(self.conn)
+class NumericSortProxyModel(QSortFilterProxyModel):
+    def lessThan(self, left, right):
+        left_data = left.data(Qt.DisplayRole)
+        right_data = right.data(Qt.DisplayRole)
         
+        # Пытаемся преобразовать в числа
+        try:
+            left_num = float(left_data)
+            right_num = float(right_data)
+            return left_num < right_num
+        except (ValueError, TypeError):
+            # Если не получается, сортируем как строки
+            return left_data < right_data
+
+class DatabaseSelector(QDialog):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Выбор базы данных")
+        self.setFixedSize(400, 200)
+        self.setWindowIcon(QIcon('icon.png'))
+        
+        layout = QVBoxLayout()
+        
+        label = QLabel("Выберите действие:")
+        label.setStyleSheet("font-size: 14px;")
+        layout.addWidget(label)
+        
+        self.btn_open = QPushButton("Открыть существующую базу")
+        self.btn_open.setFixedHeight(40)
+        self.btn_open.clicked.connect(self.open_existing_db)
+        layout.addWidget(self.btn_open)
+        
+        self.btn_create = QPushButton("Создать новую базу")
+        self.btn_create.setFixedHeight(40)
+        self.btn_create.clicked.connect(self.create_new_db)
+        layout.addWidget(self.btn_create)
+        
+        self.setLayout(layout)
+    
+    def open_existing_db(self):
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Выберите файл базы данных", 
+            "", "SQLite Database (*.db);;All files (*)"
+        )
+        if filepath:
+            self.db_file = filepath
+            self.accept()
+    
+    def create_new_db(self):
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "Создать новую базу данных", 
+            "", "SQLite Database (*.db);;All files (*)"
+        )
+        if filepath:
+            if not filepath.endswith('.db'):
+                filepath += '.db'
+            
+            conn = sqlite3.connect(filepath)
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS tools (
+                    id INTEGER PRIMARY KEY,
+                    T INTEGER, Name TEXT, L REAL, R REAL, Type TEXT, Description TEXT, 
+                    LCut REAL, Cuts INTEGER, ROffset REAL, LOffset REAL, PType INTEGER
+                );
+            ''')
+            conn.commit()
+            conn.close()
+            
+            self.db_file = filepath
+            self.accept()
+
+class EditDialog(QDialog):
+    def __init__(self, data, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Редактировать запись")
+        self.setFixedSize(300, 450)
+        self.setWindowIcon(QIcon('icon.png'))
+        
+        self.fields = ['T', 'Name', 'L', 'R', 'Type', 'Description', 
+                      'LCut', 'Cuts', 'ROffset', 'LOffset', 'PType']
+        self.entries = {}
+        
+        layout = QFormLayout()
+        
+        for idx, field in enumerate(self.fields):
+            label = QLabel(field)
+            entry = QLineEdit()
+            entry.setText(str(data[idx+1] if idx+1 < len(data) else ''))
+            self.entries[field] = entry
+            layout.addRow(label, entry)
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        
+        main_layout = QVBoxLayout()
+        main_layout.addLayout(layout)
+        main_layout.addWidget(buttons)
+        self.setLayout(main_layout)
+    
+    def get_data(self):
+        return [self.entries[field].text() for field in self.fields]
+
+class DatabaseApp(QMainWindow):
+    def __init__(self, db_file):
+        super().__init__()
+        self.db_file = db_file
+        self.setWindowTitle(f"DMG Tool Agent - {os.path.basename(db_file)}")
+        self.setGeometry(100, 100, 1200, 600)
+        self.setWindowIcon(QIcon('icon.png'))
+        
+        self.conn = sqlite3.connect(db_file)
         self.setup_ui()
         self.load_data()
-
+    
     def setup_ui(self):
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
         
-        # Создание фреймов для таблицы и скроллбаров
-        frame = Frame(self.root)
-        frame.pack(side=TOP, fill=BOTH, expand=True)
-
-        # Создание таблицы
-        columns = ('ID', 'T', 'Name', 'L', 'R', 'Type', 'Description', 
-                   'LCut', 'Cuts', 'ROffset', 'LOffset', 'PType')
-        self.tree = ttk.Treeview(frame, columns=columns, show='headings')
-        for col in columns:
-            self.tree.heading(col, text=col, command=lambda _col=col: self.sort_by_column(_col, False))
-        self.tree.pack(side=LEFT, fill=BOTH, expand=True)
-
-        # Добавление скроллбаров
-        hsb = ttk.Scrollbar(frame, orient="horizontal", command=self.tree.xview)
-        hsb.place(relwidth=1, anchor="sw", x=0, rely=1)
-        vsb = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
-        vsb.place(relheight=1, anchor="ne", y=0, relx=1)
-        self.tree.configure(xscrollcommand=hsb.set, yscrollcommand=vsb.set)
+        layout = QVBoxLayout()
         
-        # Кнопки
-        controls = Frame(self.root)
-        controls.pack(side=BOTTOM, fill=X)
-
-        self.entry_value = Entry(controls)
-        self.entry_value.pack(side=LEFT, fill=X, expand=True, padx=5, pady=5)
-
-        add_button = Button(controls, text="Добавить", command=self.add_record)
-        add_button.pack(side=LEFT, padx=5, pady=5)
-
-        delete_button = Button(controls, text="Удалить", command=self.delete_record)
-        delete_button.pack(side=LEFT, padx=5, pady=5)
-
-        search_button = Button(controls, text="Поиск", command=self.search_record)
-        search_button.pack(side=LEFT, padx=5, pady=5)
-
-        self.tree.bind('<Double-1>', self.edit_record)
-
+        self.table = QTableView()
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.doubleClicked.connect(self.edit_record)
+        
+        self.model = QStandardItemModel()
+        self.proxy_model = NumericSortProxyModel()  # Используем нашу модель для сортировки
+        self.proxy_model.setSourceModel(self.model)
+        self.table.setModel(self.proxy_model)
+        
+        headers = ['ID', 'T', 'Name', 'L', 'R', 'Type', 'Description', 
+                   'LCut', 'Cuts', 'ROffset', 'LOffset', 'PType']
+        self.model.setHorizontalHeaderLabels(headers)
+        
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setSortingEnabled(True)
+        
+        control_panel = QWidget()
+        control_layout = QHBoxLayout()
+        
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Поиск...")
+        self.search_input.textChanged.connect(self.search_record)
+        control_layout.addWidget(self.search_input)
+        
+        self.btn_add = QPushButton("Добавить")
+        self.btn_add.clicked.connect(self.add_record)
+        control_layout.addWidget(self.btn_add)
+        
+        self.btn_edit = QPushButton("Редактировать")
+        self.btn_edit.clicked.connect(self.edit_record)
+        control_layout.addWidget(self.btn_edit)
+        
+        self.btn_delete = QPushButton("Удалить")
+        self.btn_delete.clicked.connect(self.delete_record)
+        control_layout.addWidget(self.btn_delete)
+        
+        control_panel.setLayout(control_layout)
+        
+        layout.addWidget(self.table)
+        layout.addWidget(control_panel)
+        central_widget.setLayout(layout)
+    
     def load_data(self):
-        for row in self.tree.get_children():
-            self.tree.delete(row)
+        self.model.removeRows(0, self.model.rowCount())
         
-        records = get_all_values(self.conn)
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT * FROM tools;')
+        records = cursor.fetchall()
+        
         for record in records:
-            self.tree.insert('', END, values=record)
-
+            row = []
+            for col, item in enumerate(record):
+                cell = QStandardItem()
+                # Устанавливаем правильный тип данных для числовых столбцов
+                if col in [0, 1, 8, 11]:  # Целочисленные столбцы (ID, T, Cuts, PType)
+                    cell.setData(int(item) if item is not None else 0, Qt.DisplayRole)
+                elif col in [3, 4, 7, 9, 10]:  # Вещественные столбцы (L, R, LCut, ROffset, LOffset)
+                    cell.setData(float(item) if item is not None else 0.0, Qt.DisplayRole)
+                else:  # Текстовые столбцы
+                    cell.setData(str(item) if item is not None else '', Qt.DisplayRole)
+                row.append(cell)
+            self.model.appendRow(row)
+    
     def add_record(self):
-        values = self.entry_value.get().split(',')
-        if len(values) <= 11:
-            values = values + [''] * (11 - len(values))
-            insert_value(self.conn, values)
-            self.entry_value.delete(0, END)
+        dialog = EditDialog(['']*12, self)
+        if dialog.exec_() == QDialog.Accepted:
+            values = dialog.get_data()
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                INSERT INTO tools (T, Name, L, R, Type, Description, LCut, Cuts, ROffset, LOffset, PType) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+            ''', values)
+            self.conn.commit()
             self.load_data()
-        else:
-            messagebox.showwarning("Ошибка ввода", "Введите не более 11 значений, разделенных запятыми")
-
+    
+    def edit_record(self):
+        selected = self.table.selectionModel().selectedRows()
+        if not selected:
+            QMessageBox.warning(self, "Ошибка", "Выберите запись для редактирования")
+            return
+        
+        index = self.proxy_model.mapToSource(selected[0])
+        row = index.row()
+        record_id = int(self.model.item(row, 0).data(Qt.DisplayRole))
+        
+        data = []
+        for col in range(self.model.columnCount()):
+            data.append(self.model.item(row, col).data(Qt.DisplayRole))
+        
+        dialog = EditDialog(data, self)
+        if dialog.exec_() == QDialog.Accepted:
+            new_values = dialog.get_data()
+            cursor = self.conn.cursor()
+            cursor.execute('''
+                UPDATE tools SET T=?, Name=?, L=?, R=?, Type=?, Description=?, 
+                LCut=?, Cuts=?, ROffset=?, LOffset=?, PType=? WHERE id=?;
+            ''', new_values + [record_id])
+            self.conn.commit()
+            self.load_data()
+    
     def delete_record(self):
-        selected_item = self.tree.selection()
-        if selected_item:
-            record_id = self.tree.item(selected_item)['values'][0]
-            delete_value(self.conn, record_id)
+        selected = self.table.selectionModel().selectedRows()
+        if not selected:
+            QMessageBox.warning(self, "Ошибка", "Выберите запись для удаления")
+            return
+        
+        index = self.proxy_model.mapToSource(selected[0])
+        row = index.row()
+        record_id = int(self.model.item(row, 0).data(Qt.DisplayRole))
+        
+        reply = QMessageBox.question(
+            self, 'Подтверждение', 
+            'Вы уверены, что хотите удалить эту запись?',
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            cursor = self.conn.cursor()
+            cursor.execute('DELETE FROM tools WHERE id=?;', (record_id,))
+            self.conn.commit()
             self.load_data()
-        else:
-            messagebox.showwarning("Ошибка выбора", "Выберите строку для удаления")
-
-    def edit_record(self, event):
-        selected_item = self.tree.selection()[0]
-        values = self.tree.item(selected_item)['values']
-        self.entry_value.delete(0, END)
-        self.entry_value.insert(0, ','.join(map(str, values[1:])))
-        
-        top = Toplevel(self.root)
-        top.title("Редактировать запись")
-
-        # Установка иконки окна редактирования
-        top.iconphoto(False, PhotoImage(file='icon.png'))
-        
-        # Центрирование окна
-        self.root.update_idletasks()
-        parent_x = self.root.winfo_x()
-        parent_y = self.root.winfo_y()
-        parent_width = self.root.winfo_width()
-        parent_height = self.root.winfo_height()
-        
-        width = 220
-        height = 390
-        x = parent_x + (parent_width // 2) - (width // 2)
-        y = parent_y + (parent_height // 2) - (height // 2)
-        top.geometry(f"{width}x{height}+{x}+{y}")
-
-        fields = ['T', 'Name', 'L', 'R', 'Type', 'Description', 'LCut', 'Cuts', 'ROffset', 'LOffset', 'PType']
-        entries = {}
-
-        for idx, field in enumerate(fields):
-            Label(top, text=field).grid(row=idx, column=0, padx=5, pady=5, sticky=W)
-            entry = Entry(top)
-            entry.grid(row=idx, column=1, padx=5, pady=5, sticky=EW)
-            entry.insert(0, str(values[idx + 1]))
-            entries[field] = entry
-
-        def save_and_update():
-            new_values = [entry.get() for entry in entries.values()]
-            if len(new_values) <= 11:
-                new_values = new_values + [''] * (11 - len(new_values))
-                update_value(self.conn, new_values + [values[0]])
-                self.load_data()
-
-                # Найти обновленную запись по ID
-                for child in self.tree.get_children():
-                    if self.tree.item(child)['values'][0] == values[0]:
-                        self.tree.selection_set(child)
-                        self.tree.see(child)
-                        break
-                top.destroy()
-            else:
-                messagebox.showwarning("Ошибка ввода", "Введите не более 11 значений, разделенных запятыми")
-
-        Button(top, text="Сохранить", command=save_and_update).grid(row=len(fields), columnspan=2, pady=10)
-
-    def search_record(self):
-        search_value = self.entry_value.get()
-        for child in self.tree.get_children():
-            values = self.tree.item(child)["values"]
-            if search_value in map(str, values):
-                self.tree.selection_set(child)
-                self.tree.see(child)
-                break
-
-    def sort_by_column(self, col, descending):
-        data = [(self.tree.set(child, col), child) for child in self.tree.get_children('')]
-        
-        # Преобразовать данные для сортировки
-        try:
-            data = [(float(val), child) if val.replace('.', '', 1).isdigit() else (val, child) for val, child in data]
-        except ValueError:
-            data = [(val, child) for val, child in data]
-
-        data.sort(reverse=descending)
-        
-        for index, (val, child) in enumerate(data):
-            self.tree.move(child, '', index)
-
-        for column in self.tree["columns"]:
-            if column == col:
-                if descending:
-                    self.tree.heading(column, text=f"{col} ↑")
-                else:
-                    self.tree.heading(column, text=f"{col} ↓")
-            else:
-                self.tree.heading(column, text=column)
-        
-        self.tree.heading(col, command=lambda _col=col: self.sort_by_column(_col, not descending))
+    
+    def search_record(self, text):
+        self.proxy_model.setFilterKeyColumn(-1)
+        self.proxy_model.setFilterCaseSensitivity(Qt.CaseInsensitive)
+        self.proxy_model.setFilterFixedString(text)
+    
+    def closeEvent(self, event):
+        self.conn.close()
+        event.accept()
 
 def main():
-    root = Tk()
+    app = QApplication(sys.argv)
+    app.setStyle('Fusion')
     
-    # Центрирование и размеры основного окна
-    root.update_idletasks()
-    width = root.winfo_screenwidth() // 2
-    height = root.winfo_screenheight() // 2
-    x = (root.winfo_screenwidth() // 2) - (width // 2)
-    y = (root.winfo_screenheight() // 2) - (height // 2)
-    root.geometry(f"{width}x{height}+{x}+{y}")
-
-    app = DatabaseApp(root)
-    root.mainloop()
+    selector = DatabaseSelector()
+    if selector.exec_() == QDialog.Accepted:
+        main_window = DatabaseApp(selector.db_file)
+        main_window.show()
+        sys.exit(app.exec_())
 
 if __name__ == "__main__":
     main()
